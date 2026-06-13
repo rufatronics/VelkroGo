@@ -10,8 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.suffix }}
+  # ── CLI / TUI + Daemon (pure Go, CGO_ENABLED=0, cross-compile from Linux) ──
+  build-cli:
+    name: Build CLI (${{ matrix.suffix }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -29,39 +30,81 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
           cache: true
 
-      - name: Build binaries
+      - name: Build CLI tools (CGO disabled — pure Go)
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          VERSION=${{ github.ref_name }}
-          LDFLAGS="-s -w -X main.version=${VERSION}"
+          VER=${{ github.ref_name }}
+          LDFLAG="-s -w -X main.version=${VER}"
+          go build -ldflags="${LDFLAG}" -o dist/velkrod-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/velkrod
+          go build -ldflags="${LDFLAG}" -o dist/velkro-${{ matrix.suffix }}${{ matrix.ext }}  ./cmd/velkro
 
-          go build -ldflags="${LDFLAGS}" \
-            -o dist/velkrod-${{ matrix.suffix }}${{ matrix.ext }} \
-            ./cmd/velkrod
-
-          go build -ldflags="${LDFLAGS}" \
-            -o dist/velkro-${{ matrix.suffix }}${{ matrix.ext }} \
-            ./cmd/velkro
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.suffix }}
+          name: cli-${{ matrix.suffix }}
           path: dist/
 
+  # ── Native GUI (Fyne, CGO required — build on each OS natively) ────────────
+  build-gui-linux:
+    name: Build GUI (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install Fyne system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev \
+            libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev
+
+      - name: Build GUI (Linux x64)
+        run: |
+          mkdir -p dist
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o dist/velkroapp-linux-amd64 ./cmd/velkroapp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-linux
+          path: dist/
+
+  build-gui-windows:
+    name: Build GUI (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build GUI (Windows x64)
+        run: |
+          mkdir dist
+          go build -ldflags="-s -w -H windowsgui -X main.version=${{ github.ref_name }}" `
+            -o dist\velkroapp-windows-amd64.exe .\cmd\velkroapp
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-windows
+          path: dist/
+
+  # ── Release: gather all artifacts and publish ──────────────────────────────
   release:
     name: Create Release
-    needs: build
+    needs: [build-cli, build-gui-linux, build-gui-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -84,35 +127,31 @@ jobs:
           body: |
             ## VelkroGo ${{ github.ref_name }}
 
-            Self-hosted AI agent for Windows & Linux — coding agent + computer-use agent in one binary.
+            Self-hosted AI agent for Windows & Linux — coding agent + computer-use agent.
 
-            ### Download
-            | Platform | Daemon (`velkrod`) | Client (`velkro`) |
+            ### Downloads
+
+            | Binary | Platform | Description |
             |---|---|---|
-            | Linux x64 | `velkrod-linux-amd64` | `velkro-linux-amd64` |
-            | Linux ARM64 | `velkrod-linux-arm64` | `velkro-linux-arm64` |
-            | Windows x64 | `velkrod-windows-amd64.exe` | `velkro-windows-amd64.exe` |
+            | `velkroapp-linux-amd64` | Linux x64 | **Native GUI app** (recommended) |
+            | `velkroapp-windows-amd64.exe` | Windows x64 | **Native GUI app** (recommended) |
+            | `velkro-linux-amd64` | Linux x64 | Terminal (TUI) client |
+            | `velkro-windows-amd64.exe` | Windows x64 | Terminal (TUI) client |
+            | `velkrod-linux-amd64` | Linux x64 | Headless daemon |
+            | `velkrod-linux-arm64` | Linux ARM64 | Headless daemon |
+            | `velkrod-windows-amd64.exe` | Windows x64 | Headless daemon |
 
-            ### Quick start
+            ### Quick start (GUI)
             ```bash
-            # Start the daemon (serves web GUI on http://localhost:7477)
-            ./velkrod
-
-            # Or use the TUI
-            ./velkro
+            chmod +x velkroapp-linux-amd64   # Linux
+            ./velkroapp-linux-amd64
             ```
+            First launch opens a setup dialog — pick your AI provider and enter your API key.
 
-            First run will walk you through picking an AI provider (16 supported).
+            ### Supported providers
+            Anthropic · OpenAI · Google Gemini · DeepSeek · Groq · Mistral · xAI · Together · Perplexity · Cohere · OpenRouter · Fireworks · Cerebras · Ollama · LM Studio · Custom
 
-            ### What's included
-            - 16 AI providers: Anthropic, OpenAI, Gemini, DeepSeek, Groq, Mistral, xAI, Together, Perplexity, Cohere, OpenRouter, Fireworks, Cerebras, Ollama, LM Studio, custom
-            - Web GUI + TUI
-            - Terminal/shell control (with approval gate)
-            - Git & GitHub tools
-            - Web search (no browser needed)
-            - Scheduler (cron, interval, one-shot)
-            - Hash-chained audit log
-            - Saver mode to cut API costs
+            See [HOWTOUSE.md](https://github.com/rufatronics/VelkroGo/blob/main/HOWTOUSE.md) for full documentation.
           files: dist/**
           draft: false
           prerelease: false

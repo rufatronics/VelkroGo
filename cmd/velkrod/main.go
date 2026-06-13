@@ -1,7 +1,6 @@
-// Command velkrod is the VelkroGo daemon: a long-running local process that
-// hosts the agent loop, policy gate, scheduler, and state, and serves the
-// HTTP+WebSocket local API + web GUI. Both the TUI (velkro) and the web browser
-// GUI are thin clients over the local API.
+// Command velkrod is the VelkroGo headless daemon: runs the agent loop,
+// scheduler, and state in the background and exposes a local JSON/WebSocket
+// API on localhost:7477 for scripting and scheduled jobs.
 package main
 
 import (

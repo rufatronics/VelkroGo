@@ -1,0 +1,118 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.suffix }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64
+            ext: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          VERSION=${{ github.ref_name }}
+          LDFLAGS="-s -w -X main.version=${VERSION}"
+
+          go build -ldflags="${LDFLAGS}" \
+            -o dist/velkrod-${{ matrix.suffix }}${{ matrix.ext }} \
+            ./cmd/velkrod
+
+          go build -ldflags="${LDFLAGS}" \
+            -o dist/velkro-${{ matrix.suffix }}${{ matrix.ext }} \
+            ./cmd/velkro
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.suffix }}
+          path: dist/
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: VelkroGo ${{ github.ref_name }}
+          body: |
+            ## VelkroGo ${{ github.ref_name }}
+
+            Self-hosted AI agent for Windows & Linux — coding agent + computer-use agent in one binary.
+
+            ### Download
+            | Platform | Daemon (`velkrod`) | Client (`velkro`) |
+            |---|---|---|
+            | Linux x64 | `velkrod-linux-amd64` | `velkro-linux-amd64` |
+            | Linux ARM64 | `velkrod-linux-arm64` | `velkro-linux-arm64` |
+            | Windows x64 | `velkrod-windows-amd64.exe` | `velkro-windows-amd64.exe` |
+
+            ### Quick start
+            ```bash
+            # Start the daemon (serves web GUI on http://localhost:7477)
+            ./velkrod
+
+            # Or use the TUI
+            ./velkro
+            ```
+
+            First run will walk you through picking an AI provider (16 supported).
+
+            ### What's included
+            - 16 AI providers: Anthropic, OpenAI, Gemini, DeepSeek, Groq, Mistral, xAI, Together, Perplexity, Cohere, OpenRouter, Fireworks, Cerebras, Ollama, LM Studio, custom
+            - Web GUI + TUI
+            - Terminal/shell control (with approval gate)
+            - Git & GitHub tools
+            - Web search (no browser needed)
+            - Scheduler (cron, interval, one-shot)
+            - Hash-chained audit log
+            - Saver mode to cut API costs
+          files: dist/**
+          draft: false
+          prerelease: false

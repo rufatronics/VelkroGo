@@ -9,15 +9,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/rufatronics/velkrogo/internal/config"
 	"github.com/rufatronics/velkrogo/internal/orchestrator"
 	"github.com/rufatronics/velkrogo/internal/policy"
+	"github.com/rufatronics/velkrogo/internal/provider"
 	"github.com/rufatronics/velkrogo/internal/reasoning"
 	"github.com/rufatronics/velkrogo/internal/registry"
 )
 
-// The TUI implements orchestrator.Approver and reasoning.Asker by blocking the
-// engine goroutine on a reply channel while the user answers a modal.
+// ---- bridge (approver + asker) ----
 
 type approvalReq struct {
 	tool    registry.Tool
@@ -36,9 +35,7 @@ type questionReq struct {
 }
 
 type uiBridge struct {
-	prog      *tea.Program
-	approvals chan approvalReq
-	questions chan questionReq
+	prog *tea.Program
 }
 
 func (b *uiBridge) Approve(ctx context.Context, tool registry.Tool, preview string) (bool, *policy.Grant, error) {
@@ -65,6 +62,15 @@ func (b *uiBridge) Ask(ctx context.Context, qs []reasoning.Question) ([]reasonin
 
 type turnDone struct{ err error }
 
+// ---- TUI model ----
+
+type tuiView int
+
+const (
+	viewChat tuiView = iota
+	viewSettings
+)
+
 type uiState int
 
 const (
@@ -76,8 +82,9 @@ const (
 
 type model struct {
 	engine   *orchestrator.Engine
-	cfg      config.Config
+	store    *provider.Store
 	state    uiState
+	view     tuiView
 	input    string
 	lines    []string
 	plan     *orchestrator.Plan
@@ -86,28 +93,37 @@ type model struct {
 	inToks   int
 	outToks  int
 	width    int
+	// Settings cursor
+	settingsCursor int
 }
 
 var (
-	styleUser  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	styleAgent = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	styleTool  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-	styleErr   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	stylePlan  = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
+	styleUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	styleAgent  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	styleTool   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
+	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	stylePlan   = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
+	styleHead   = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
+	styleSel    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	styleDim    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).Padding(0, 1)
 )
 
-func runTUI(engine *orchestrator.Engine, events chan orchestrator.Event, cfg config.Config) error {
-	m := &model{engine: engine, cfg: cfg, lines: []string{
-		"VelkroGo — " + modeLabel(cfg) + ". Type a task and press Enter. Ctrl+C quits.",
-	}}
+func runTUI(engine *orchestrator.Engine, events chan orchestrator.Event, store *provider.Store) error {
+	m := &model{
+		engine: engine,
+		store:  store,
+		lines: []string{
+			styleHead.Render("VelkroGo") + "  " + modeLine(engine) + "  " + styleDim.Render("Tab=settings  Ctrl+C=quit"),
+		},
+	}
 	p := tea.NewProgram(m)
 
 	bridge := &uiBridge{prog: p}
 	engine.Approver = bridge
 	engine.Asker = bridge
 
-	// Pump engine events into the TUI.
 	go func() {
 		for ev := range events {
 			p.Send(ev)
@@ -118,11 +134,12 @@ func runTUI(engine *orchestrator.Engine, events chan orchestrator.Event, cfg con
 	return err
 }
 
-func modeLabel(cfg config.Config) string {
-	if cfg.SaverMode {
-		return fmt.Sprintf("%s/%s (saver mode)", cfg.Provider.Name, cfg.Provider.Model)
+func modeLine(e *orchestrator.Engine) string {
+	mode := "normal"
+	if e.Mode == orchestrator.ModeSaver {
+		mode = "saver"
 	}
-	return fmt.Sprintf("%s/%s", cfg.Provider.Name, cfg.Provider.Model)
+	return styleDim.Render(fmt.Sprintf("[%s mode]", mode))
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -134,22 +151,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case orchestrator.Event:
-		switch msg.Kind {
-		case "text":
-			m.lines = append(m.lines, styleAgent.Render(msg.Text))
-		case "tool_start":
-			m.lines = append(m.lines, styleTool.Render("→ "+msg.Tool+" "+msg.Text))
-		case "tool_done":
-			m.lines = append(m.lines, styleTool.Render("← "+msg.Tool+": "+firstLine(msg.Text)))
-		case "plan":
-			m.plan = msg.Plan
-		case "usage":
-			m.inToks += msg.InToks
-			m.outToks += msg.OutToks
-		case "error":
-			m.lines = append(m.lines, styleErr.Render("error: "+msg.Text))
-		}
-		return m, nil
+		return m.handleEvent(msg)
 
 	case approvalReq:
 		req := msg
@@ -173,9 +175,39 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
+	switch ev.Kind {
+	case "text":
+		m.lines = append(m.lines, styleAgent.Render(ev.Text))
+	case "tool_start":
+		m.lines = append(m.lines, styleTool.Render("→ "+ev.Tool+" "+ev.Text))
+	case "tool_done":
+		m.lines = append(m.lines, styleTool.Render("← "+ev.Tool+": "+firstLine(ev.Text)))
+	case "plan":
+		m.plan = ev.Plan
+	case "usage":
+		m.inToks += ev.InToks
+		m.outToks += ev.OutToks
+	case "error":
+		m.lines = append(m.lines, styleErr.Render("error: "+ev.Text))
+		m.state = stateInput
+	}
+	return m, nil
+}
+
 func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Type == tea.KeyCtrlC {
 		return m, tea.Quit
+	}
+
+	// Tab switches views.
+	if key.Type == tea.KeyTab && m.state == stateInput {
+		if m.view == viewChat {
+			m.view = viewSettings
+		} else {
+			m.view = viewChat
+		}
+		return m, nil
 	}
 
 	switch m.state {
@@ -183,15 +215,14 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key.String() {
 		case "y":
 			m.approval.reply <- approvalResp{approved: true}
-		case "s": // allow this tool for the whole session
+			m.approval = nil; m.state = stateBusy
+		case "s":
 			m.approval.reply <- approvalResp{approved: true, grant: &policy.Grant{Capability: m.approval.tool.Name(), Scope: "*"}}
+			m.approval = nil; m.state = stateBusy
 		case "n", "esc":
 			m.approval.reply <- approvalResp{approved: false}
-		default:
-			return m, nil
+			m.approval = nil; m.state = stateBusy
 		}
-		m.approval = nil
-		m.state = stateBusy
 		return m, nil
 
 	case stateQuestion:
@@ -199,36 +230,82 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if n, err := strconv.Atoi(key.String()); err == nil && n >= 1 && n <= len(q.Options) {
 			m.question.reply <- []reasoning.Answer{{Selected: []string{q.Options[n-1].Label}}}
 			m.lines = append(m.lines, styleWarn.Render("you chose: "+q.Options[n-1].Label))
-			m.question = nil
-			m.state = stateBusy
+			m.question = nil; m.state = stateBusy
 		}
 		return m, nil
 
 	case stateInput:
-		switch key.Type {
-		case tea.KeyEnter:
-			text := strings.TrimSpace(m.input)
-			if text == "" {
-				return m, nil
+		if m.view == viewSettings {
+			return m.handleSettingsKey(key)
+		}
+		return m.handleChatKey(key)
+	}
+	return m, nil
+}
+
+func (m *model) handleChatKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyEnter:
+		text := strings.TrimSpace(m.input)
+		if text == "" {
+			return m, nil
+		}
+		// 's' toggle shortcut.
+		if text == "/saver" {
+			if m.engine.Mode == orchestrator.ModeNormal {
+				m.engine.Mode = orchestrator.ModeSaver
+				m.lines = append(m.lines, styleDim.Render("Switched to saver mode"))
+			} else {
+				m.engine.Mode = orchestrator.ModeNormal
+				m.lines = append(m.lines, styleDim.Render("Switched to normal mode"))
 			}
 			m.input = ""
-			m.lines = append(m.lines, styleUser.Render("you: ")+text)
-			m.state = stateBusy
-			engine := m.engine
-			return m, func() tea.Msg {
-				return turnDone{err: engine.Run(context.Background(), text)}
-			}
-		case tea.KeyBackspace:
-			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			m.input += string(key.Runes)
-			if key.Type == tea.KeySpace {
-				m.input += " "
+			return m, nil
+		}
+		m.input = ""
+		m.lines = append(m.lines, styleUser.Render("you: ")+text)
+		m.state = stateBusy
+		engine := m.engine
+		return m, func() tea.Msg {
+			return turnDone{err: engine.Run(context.Background(), text)}
+		}
+	case tea.KeyBackspace:
+		if len(m.input) > 0 {
+			m.input = m.input[:len(m.input)-1]
+		}
+	case tea.KeyRunes:
+		m.input += string(key.Runes)
+	case tea.KeySpace:
+		m.input += " "
+	}
+	return m, nil
+}
+
+func (m *model) handleSettingsKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	providers := m.store.List()
+	switch key.Type {
+	case tea.KeyUp:
+		if m.settingsCursor > 0 {
+			m.settingsCursor--
+		}
+	case tea.KeyDown:
+		if m.settingsCursor < len(providers)-1 {
+			m.settingsCursor++
+		}
+	case tea.KeyEnter:
+		if len(providers) > m.settingsCursor {
+			id := providers[m.settingsCursor].ID
+			_ = m.store.SetDefault(id)
+			m.lines = append(m.lines, styleDim.Render("Set default provider to: "+providers[m.settingsCursor].Name))
+		}
+	case tea.KeyDelete, tea.KeyBackspace:
+		if len(providers) > m.settingsCursor {
+			id := providers[m.settingsCursor].ID
+			_ = m.store.Remove(id)
+			if m.settingsCursor > 0 {
+				m.settingsCursor--
 			}
 		}
-		return m, nil
 	}
 	return m, nil
 }
@@ -236,20 +313,24 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) View() string {
 	var b strings.Builder
 
-	// Plan pane (Manus-style visible outline).
+	if m.view == viewSettings {
+		return m.settingsView()
+	}
+
+	// Plan pane.
 	if m.plan != nil && len(m.plan.Steps) > 0 {
 		b.WriteString(stylePlan.Render("Plan:") + "\n")
+		icons := map[orchestrator.StepStatus]string{
+			orchestrator.StepPending: "[ ]", orchestrator.StepActive: "[>]",
+			orchestrator.StepDone: "[x]", orchestrator.StepBlocked: "[!]",
+		}
 		for _, s := range m.plan.Steps {
-			mark := map[orchestrator.StepStatus]string{
-				orchestrator.StepPending: "[ ]", orchestrator.StepActive: "[>]",
-				orchestrator.StepDone: "[x]", orchestrator.StepBlocked: "[!]",
-			}[s.Status]
-			b.WriteString(stylePlan.Render(fmt.Sprintf("  %s %s. %s", mark, s.ID, s.Title)) + "\n")
+			b.WriteString(stylePlan.Render(fmt.Sprintf("  %s %s. %s", icons[s.Status], s.ID, s.Title)) + "\n")
 		}
 		b.WriteString("\n")
 	}
 
-	// Transcript (last N lines to stay lightweight).
+	// Transcript.
 	start := 0
 	if len(m.lines) > 200 {
 		start = len(m.lines) - 200
@@ -259,12 +340,13 @@ func (m *model) View() string {
 	}
 	b.WriteString("\n")
 
-	// Modals / prompt line.
+	// Prompt / modal.
 	switch m.state {
 	case stateApproval:
+		tier := m.approval.tool.Tier()
 		b.WriteString(styleWarn.Render(fmt.Sprintf(
-			"APPROVAL REQUIRED (tier T%d)\n  %s\n  [y] allow once   [s] allow for session   [n] deny",
-			m.approval.tool.Tier(), m.approval.preview)))
+			"APPROVAL REQUIRED  tier=T%d  tool=%s\n  %s\n  [y] allow once   [s] allow for session   [n] deny",
+			tier, m.approval.tool.Name(), truncLine(m.approval.preview, 100))))
 	case stateQuestion:
 		q := m.question.qs[0]
 		b.WriteString(styleWarn.Render("QUESTION: "+q.Prompt) + "\n")
@@ -272,10 +354,41 @@ func (m *model) View() string {
 			b.WriteString(styleWarn.Render(fmt.Sprintf("  [%d] %s", i+1, o.Label)) + "\n")
 		}
 	case stateBusy:
-		b.WriteString(styleTool.Render("… working (tokens in/out: " +
-			strconv.Itoa(m.inToks) + "/" + strconv.Itoa(m.outToks) + ")"))
+		b.WriteString(styleTool.Render(fmt.Sprintf("… working  (in=%d out=%d tok)  /saver to toggle cost mode",
+			m.inToks, m.outToks)))
 	default:
-		b.WriteString(styleUser.Render("> ") + m.input + "█")
+		mode := "normal"
+		if m.engine.Mode == orchestrator.ModeSaver {
+			mode = "💰saver"
+		}
+		b.WriteString(styleUser.Render("> ") + m.input + "█" +
+			styleDim.Render(fmt.Sprintf("  [%s] Tab=settings  /saver=toggle", mode)))
+	}
+	return b.String()
+}
+
+func (m *model) settingsView() string {
+	var b strings.Builder
+	b.WriteString(styleHead.Render("Settings — AI Providers") + "\n")
+	b.WriteString(styleDim.Render("↑↓ navigate  Enter=set default  Del=remove  Tab=back to chat") + "\n\n")
+
+	providers := m.store.List()
+	if len(providers) == 0 {
+		b.WriteString(styleDim.Render("No providers configured.") + "\n")
+		b.WriteString(styleDim.Render("Run first-run setup or add via the web GUI (velkrod).") + "\n")
+		return b.String()
+	}
+	for i, p := range providers {
+		def := ""
+		if p.IsDefault {
+			def = " [default]"
+		}
+		line := fmt.Sprintf("  %s  %s · %s%s", p.Name, p.Kind, p.Model, def)
+		if i == m.settingsCursor {
+			b.WriteString(styleSel.Render("▶ "+line) + "\n")
+		} else {
+			b.WriteString(styleDim.Render("  "+line) + "\n")
+		}
 	}
 	return b.String()
 }
@@ -283,6 +396,13 @@ func (m *model) View() string {
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]
+	}
+	return s
+}
+
+func truncLine(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
 	}
 	return s
 }

@@ -29,8 +29,8 @@ type Approver interface {
 	Approve(ctx context.Context, tool registry.Tool, preview string) (approved bool, grant *policy.Grant, err error)
 }
 
-// Engine is the in-process agent loop (Phase 1; the daemon hosts this same
-// engine behind the local API in a later phase).
+// Engine is the in-process agent loop. The daemon hosts this same engine
+// behind the local API so frontends connect to it remotely.
 type Engine struct {
 	Provider provider.Provider
 	Model    string

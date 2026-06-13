@@ -1,6 +1,5 @@
-// Package tools holds built-in capabilities. Phase 1 ships read-only (T0)
-// filesystem tools to prove tool routing end to end; write/shell tools arrive
-// with the full policy previews in later phases.
+// Package tools holds built-in tool implementations registered with the
+// capability registry. T0 tools auto-allow; higher tiers require approval.
 package tools
 
 import (

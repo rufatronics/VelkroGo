@@ -1,7 +1,7 @@
 // Package orchestrator runs the agent loop: build context, ask the provider for
 // the next step, route any tool call through the policy gate, execute, observe,
 // repeat. It owns the visible plan and chooses single- vs. multi-agent
-// execution based on cost mode. See ARCHITECTURE.md §5.1.
+// execution based on cost mode.
 package orchestrator
 
 // CostMode selects the execution strategy.

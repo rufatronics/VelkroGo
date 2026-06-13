@@ -1,6 +1,6 @@
 // Package policy is the single chokepoint for side effects. Every tool call is
 // evaluated here against the granted scopes and the tool's risk tier before it
-// is allowed to run. See ARCHITECTURE.md §5.3.
+// is allowed to run.
 package policy
 
 import (

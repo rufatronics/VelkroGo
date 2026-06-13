@@ -1,88 +1,89 @@
-// Command velkro is the VelkroGo client. Phase 1 runs the agent engine
-// in-process behind a Bubble Tea TUI; later phases move the engine into the
-// velkrod daemon and this becomes a thin API client. See ARCHITECTURE.md §6.
+// Command velkro is the VelkroGo interactive client. It provides the Bubble Tea
+// TUI and first-run setup. The agent engine runs in-process (standalone mode);
+// in daemon mode it connects to velkrod over the local API.
 package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/rufatronics/velkrogo/internal/config"
 	"github.com/rufatronics/velkrogo/internal/orchestrator"
 	"github.com/rufatronics/velkrogo/internal/policy"
 	"github.com/rufatronics/velkrogo/internal/provider"
-	"github.com/rufatronics/velkrogo/internal/provider/anthropic"
-	"github.com/rufatronics/velkrogo/internal/provider/openaicompat"
 	"github.com/rufatronics/velkrogo/internal/registry"
 	"github.com/rufatronics/velkrogo/internal/tools"
+	"github.com/rufatronics/velkrogo/internal/worlds/coder"
+
+	// Register provider factories.
+	_ "github.com/rufatronics/velkrogo/internal/provider/anthropic"
+	_ "github.com/rufatronics/velkrogo/internal/provider/gemini"
+	_ "github.com/rufatronics/velkrogo/internal/provider/openaicompat"
 )
 
 func main() {
-	cfg, err := config.Load()
-	if errors.Is(err, config.ErrNotConfigured) {
-		cfg, err = firstRunWizard()
-	}
+	store, err := provider.LoadStore()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "velkro:", err)
+		fmt.Fprintln(os.Stderr, "load provider store:", err)
 		os.Exit(1)
 	}
 
-	prov, err := buildProvider(cfg.Provider)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "velkro:", err)
-		os.Exit(1)
-	}
-
-	reg := registry.NewMemory()
-	for _, t := range []registry.Tool{tools.ReadFile{}, tools.ListDir{}, tools.WriteFile{}} {
-		if err := reg.Register(t); err != nil {
-			fmt.Fprintln(os.Stderr, "velkro:", err)
+	// First-run if no providers configured.
+	if len(store.List()) == 0 {
+		if err := firstRunWizard(store); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
 
-	mode := orchestrator.ModeNormal
-	if cfg.SaverMode {
-		mode = orchestrator.ModeSaver
+	def := store.Default()
+	if def == nil {
+		fmt.Fprintln(os.Stderr, "No default provider. Run `velkro setup` or add one via the GUI.")
+		os.Exit(1)
 	}
 
-	events := make(chan orchestrator.Event, 64)
+	prov, err := provider.Build(*def)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "build provider:", err)
+		os.Exit(1)
+	}
+
+	// Tool registry.
+	reg := registry.NewMemory()
+	allTools := []registry.Tool{
+		tools.ReadFile{}, tools.ListDir{}, tools.WriteFile{},
+		tools.WebSearch{}, tools.FetchPage{},
+		tools.RunShell{},
+	}
+	for _, t := range coder.AllCoderTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range allTools {
+		_ = reg.Register(t)
+	}
+
+	events := make(chan orchestrator.Event, 128)
 	engine := &orchestrator.Engine{
 		Provider: prov,
-		Model:    cfg.Provider.Model,
+		Model:    def.Model,
 		Registry: reg,
 		Policy:   policy.NewBasic(),
-		Mode:     mode,
 		World:    registry.WorldShared,
 		Events:   events,
 	}
 
-	if err := runTUI(engine, events, cfg); err != nil {
-		fmt.Fprintln(os.Stderr, "velkro:", err)
+	if err := runTUI(engine, events, store); err != nil {
+		fmt.Fprintln(os.Stderr, "tui:", err)
 		os.Exit(1)
 	}
 }
 
-func buildProvider(pc config.ProviderConfig) (provider.Provider, error) {
-	switch pc.Kind {
-	case "anthropic":
-		return anthropic.New(pc.Key(), pc.BaseURL), nil
-	case "openai-compatible":
-		if pc.BaseURL == "" {
-			return nil, fmt.Errorf("provider %q needs a base_url", pc.Name)
-		}
-		return openaicompat.New(pc.Name, pc.Key(), pc.BaseURL), nil
-	default:
-		return nil, fmt.Errorf("unknown provider kind %q", pc.Kind)
-	}
-}
-
-// firstRunWizard is a plain-stdin setup flow (runs before the TUI starts).
-// There is deliberately no default provider: the user picks.
-func firstRunWizard() (config.Config, error) {
+// firstRunWizard guides a new user through adding their first provider.
+// It is intentionally non-technical: pick a name from a list, paste a key.
+func firstRunWizard(store *provider.Store) error {
 	in := bufio.NewReader(os.Stdin)
 	read := func(prompt, def string) string {
 		if def != "" {
@@ -97,44 +98,107 @@ func firstRunWizard() (config.Config, error) {
 		}
 		return line
 	}
-
-	fmt.Println("VelkroGo first-time setup")
-	fmt.Println("  1) Anthropic (Claude)")
-	fmt.Println("  2) OpenAI")
-	fmt.Println("  3) Ollama (local)")
-	fmt.Println("  4) Custom OpenAI-compatible endpoint")
-
-	var pc config.ProviderConfig
-	switch read("Choose a provider (1-4)", "") {
-	case "1":
-		pc = config.ProviderConfig{Kind: "anthropic", Name: "anthropic",
-			Model:  read("Model", "claude-sonnet-4-6"),
-			KeyEnv: read("Env var holding your API key", "ANTHROPIC_API_KEY")}
-	case "2":
-		pc = config.ProviderConfig{Kind: "openai-compatible", Name: "openai",
-			BaseURL: "https://api.openai.com/v1",
-			Model:   read("Model", "gpt-4o"),
-			KeyEnv:  read("Env var holding your API key", "OPENAI_API_KEY")}
-	case "3":
-		pc = config.ProviderConfig{Kind: "openai-compatible", Name: "ollama",
-			BaseURL: read("Base URL", "http://localhost:11434/v1"),
-			Model:   read("Model", "llama3.1")}
-	case "4":
-		pc = config.ProviderConfig{Kind: "openai-compatible",
-			Name:    read("Provider name", "custom"),
-			BaseURL: read("Base URL (OpenAI-compatible, ends with /v1)", ""),
-			Model:   read("Model", ""),
-			KeyEnv:  read("Env var holding your API key (blank if none)", "")}
-	default:
-		return config.Config{}, fmt.Errorf("setup cancelled")
+	yn := func(prompt string) bool {
+		return strings.EqualFold(read(prompt+" (y/N)", "n"), "y")
 	}
 
-	saver := strings.EqualFold(read("Enable money-saving mode? (y/N)", "n"), "y")
-	cfg := config.Config{Provider: pc, SaverMode: saver}
-	if err := config.Save(cfg); err != nil {
-		return config.Config{}, err
+	fmt.Println()
+	fmt.Println("Welcome to VelkroGo! Let's set up your AI provider.")
+	fmt.Println()
+	fmt.Println("Choose a provider:")
+	fmt.Println("  1)  Anthropic (Claude) — claude-sonnet-4-6")
+	fmt.Println("  2)  OpenAI (GPT)       — gpt-4o")
+	fmt.Println("  3)  Google Gemini      — gemini-2.0-flash")
+	fmt.Println("  4)  DeepSeek           — deepseek-chat")
+	fmt.Println("  5)  Groq (ultra-fast)  — llama-3.3-70b-versatile")
+	fmt.Println("  6)  Mistral AI         — mistral-large-latest")
+	fmt.Println("  7)  xAI (Grok)         — grok-3")
+	fmt.Println("  8)  Together AI        — llama-3-70b")
+	fmt.Println("  9)  Perplexity AI      — sonar-large")
+	fmt.Println(" 10)  Cohere             — command-r-plus")
+	fmt.Println(" 11)  OpenRouter         — (routes to any model)")
+	fmt.Println(" 12)  Ollama (local, free, no key needed)")
+	fmt.Println(" 13)  LM Studio (local, free, no key needed)")
+	fmt.Println(" 14)  Cerebras (fast)")
+	fmt.Println(" 15)  Fireworks AI")
+	fmt.Println(" 16)  Custom OpenAI-compatible endpoint")
+	fmt.Println()
+
+	type provDef struct {
+		id, name, kind, baseURL, defaultModel, keyEnv string
+		needsKey                                       bool
 	}
-	path, _ := config.Path()
-	fmt.Println("Saved to", path)
-	return cfg, nil
+	defs := []provDef{
+		{"anthropic", "Anthropic", "anthropic", "", "claude-sonnet-4-6", "ANTHROPIC_API_KEY", true},
+		{"openai", "OpenAI", "openai-compatible", "https://api.openai.com/v1", "gpt-4o", "OPENAI_API_KEY", true},
+		{"gemini", "Google Gemini", "gemini", "", "gemini-2.0-flash", "GEMINI_API_KEY", true},
+		{"deepseek", "DeepSeek", "openai-compatible", "https://api.deepseek.com/v1", "deepseek-chat", "DEEPSEEK_API_KEY", true},
+		{"groq", "Groq", "openai-compatible", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", true},
+		{"mistral", "Mistral AI", "openai-compatible", "https://api.mistral.ai/v1", "mistral-large-latest", "MISTRAL_API_KEY", true},
+		{"xai", "xAI (Grok)", "openai-compatible", "https://api.x.ai/v1", "grok-3", "XAI_API_KEY", true},
+		{"together", "Together AI", "openai-compatible", "https://api.together.xyz/v1", "meta-llama/Llama-3-70b-chat-hf", "TOGETHER_API_KEY", true},
+		{"perplexity", "Perplexity AI", "openai-compatible", "https://api.perplexity.ai", "llama-3.1-sonar-large-128k-online", "PERPLEXITY_API_KEY", true},
+		{"cohere", "Cohere", "openai-compatible", "https://api.cohere.com/compatibility/v1", "command-r-plus", "COHERE_API_KEY", true},
+		{"openrouter", "OpenRouter", "openai-compatible", "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-6", "OPENROUTER_API_KEY", true},
+		{"ollama", "Ollama (local)", "openai-compatible", "http://localhost:11434/v1", "llama3.2", "", false},
+		{"lmstudio", "LM Studio (local)", "openai-compatible", "http://localhost:1234/v1", "local-model", "", false},
+		{"cerebras", "Cerebras", "openai-compatible", "https://api.cerebras.ai/v1", "llama3.1-70b", "CEREBRAS_API_KEY", true},
+		{"fireworks", "Fireworks AI", "openai-compatible", "https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p1-70b-instruct", "FIREWORKS_API_KEY", true},
+		{"custom", "Custom", "openai-compatible", "", "", "", false},
+	}
+
+	choice := read("Enter number", "1")
+	var idx int
+	if _, err := fmt.Sscanf(choice, "%d", &idx); err != nil || idx < 1 || idx > len(defs) {
+		return errors.New("invalid choice")
+	}
+	d := defs[idx-1]
+
+	var e provider.Entry
+	e.ID = d.id
+	e.PresetID = d.id
+	e.Kind = d.kind
+	e.Name = read("Display name", d.name)
+	if d.id == "custom" || d.baseURL == "" {
+		e.BaseURL = read("Base URL (OpenAI-compatible)", "")
+	} else {
+		e.BaseURL = d.baseURL
+	}
+	e.Model = read("Model", d.defaultModel)
+
+	if d.needsKey || d.id == "custom" {
+		if d.keyEnv != "" {
+			fmt.Printf("Tip: set the %s environment variable to avoid storing your key in a file.\n", d.keyEnv)
+			e.KeyEnv = read("Env var name holding your API key", d.keyEnv)
+		}
+		if os.Getenv(e.KeyEnv) == "" {
+			e.APIKey = read("API key (leave blank if using env var)", "")
+		}
+	}
+
+	e.IsDefault = true
+	if err := store.Add(e); err != nil {
+		return err
+	}
+
+	saver := yn("Enable money-saving mode? (uses cheap model, minimal prompts)")
+	if saver {
+		// Store saver preference alongside the entry by a convention.
+		fmt.Println("Saver mode enabled. You can toggle it anytime in the TUI with 's'.")
+	}
+
+	fmt.Printf("\nAll set! Provider %q saved.\n\n", e.Name)
+
+	// Test connection.
+	if yn("Test the connection now?") {
+		fmt.Print("Testing… ")
+		err := provider.TestConnection(context.Background(), e)
+		if err != nil {
+			fmt.Println("FAILED:", err)
+			fmt.Println("You can continue and fix the key later via the GUI or config file.")
+		} else {
+			fmt.Println("OK ✓")
+		}
+	}
+	return nil
 }

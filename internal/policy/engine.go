@@ -8,7 +8,7 @@ import (
 	"github.com/rufatronics/velkrogo/internal/registry"
 )
 
-// Basic is the Phase 1/2 Engine implementation: T0 auto-allows, T4 always asks,
+// Basic is the default Engine implementation: T0 auto-allows, T4 always asks,
 // and everything in between asks unless a matching unexpired grant exists.
 type Basic struct {
 	mu     sync.RWMutex

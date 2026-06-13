@@ -113,6 +113,7 @@
   .audit-entry .tool { color: var(--teal); flex-shrink: 0; width: 120px; }
 
   /* Status bar */
+  .about-cap { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: .85rem; line-height: 1.4; }
   .status-bar { background: var(--surface); border-top: 1px solid var(--border); padding: 4px 14px; font-size: .75rem; color: var(--subtext); display: flex; gap: 16px; }
   .status-bar .indicator { display: flex; align-items: center; gap: 4px; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--subtext); }
@@ -132,6 +133,7 @@
     <button onclick="showView('settings')">Settings</button>
     <button onclick="showView('jobs')">Schedule</button>
     <button onclick="showView('audit')">Audit Log</button>
+    <button onclick="showView('about')">About</button>
     <button class="kill-btn" onclick="killAgent()" title="Pause / stop the agent">⏹ Stop</button>
   </nav>
 </header>
@@ -183,6 +185,93 @@
     <!-- Audit log view -->
     <div class="view" id="audit-view">
       <div id="audit-list"></div>
+    </div>
+
+    <!-- About view -->
+    <div class="view" id="about-view" style="padding:32px;overflow-y:auto">
+      <div style="max-width:680px;margin:0 auto">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px">
+          <span style="font-size:2.5rem">⚡</span>
+          <div>
+            <h1 style="font-size:1.8rem;font-weight:800;color:var(--purple)">VelkroGo</h1>
+            <span style="font-size:.85rem;color:var(--subtext)">Version 1.0 &nbsp;·&nbsp; Built for Windows & Linux</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:10px">Built by</h2>
+          <p style="font-size:1rem;font-weight:600">rufatronics</p>
+          <p style="color:var(--subtext);font-size:.85rem;margin-top:4px">github.com/rufatronics/VelkroGo</p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:12px">What is VelkroGo?</h2>
+          <p style="line-height:1.7;color:var(--text)">
+            VelkroGo is a self-hosted AI agent that runs entirely on your machine. It combines a
+            <strong>coding agent</strong> (connects to GitHub, writes code, runs builds, opens PRs) and a
+            <strong>computer-use agent</strong> (controls your terminal, files, browser, and apps) behind
+            one safety-first core — no cloud dependency, no subscription.
+          </p>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:14px">What it can do</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="about-cap">🖥️ Run terminal commands on your machine</div>
+            <div class="about-cap">📁 Read, write, and manage your files</div>
+            <div class="about-cap">🐙 Clone repos, commit, push, open PRs</div>
+            <div class="about-cap">🔨 Build and test your code automatically</div>
+            <div class="about-cap">🔍 Search the web without opening a browser</div>
+            <div class="about-cap">⏰ Schedule tasks ("every 15 min", cron, one-shot)</div>
+            <div class="about-cap">🤖 Use 16 AI providers or your own</div>
+            <div class="about-cap">💰 Saver mode to minimise API costs</div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:12px">Safety</h2>
+          <p style="line-height:1.7;color:var(--text);margin-bottom:10px">
+            Every action has a <strong>risk tier</strong>. Read-only actions (search, read file) run automatically.
+            Anything that touches your system shows you a preview and asks permission first.
+            You can approve once, for the whole session, or deny. All actions are recorded in a tamper-evident audit log.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.8rem">T0 Read-only — auto</span>
+            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.8rem">T1 Local write — approve</span>
+            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.8rem">T2 External — preview + approve</span>
+            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.8rem">T3 Device control — approve</span>
+            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.8rem">T4 Self-modify — explicit risk accept</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:12px">Supported AI providers</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${['Anthropic','OpenAI','Google Gemini','DeepSeek','Groq','Mistral','xAI Grok','Together AI','Perplexity','Cohere','OpenRouter','Fireworks','Cerebras','Ollama','LM Studio','Custom'].map(p=>`<span style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:.8rem">${p}</span>`).join('')}
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px">
+          <h2 style="color:var(--blue);font-size:.95rem;margin-bottom:12px">Roadmap</h2>
+          <div style="color:var(--text);font-size:.85rem;line-height:1.8">
+            <div>✅ Core agent loop with visible step plan</div>
+            <div>✅ 16 AI providers + custom endpoint support</div>
+            <div>✅ Approval gate with scoped grants</div>
+            <div>✅ Claude-style question box</div>
+            <div>✅ Terminal, file, git, and build tools</div>
+            <div>✅ Web search (no browser required)</div>
+            <div>✅ Scheduler (cron, interval, one-shot)</div>
+            <div>✅ Web GUI + TUI</div>
+            <div>✅ Hash-chained audit log</div>
+            <div>✅ Saver vs normal cost modes</div>
+            <div style="color:var(--subtext)">🔜 Full browser control + human takeover</div>
+            <div style="color:var(--subtext)">🔜 GUI mouse/keyboard automation</div>
+            <div style="color:var(--subtext)">🔜 Skills system + safe self-improvement</div>
+          </div>
+        </div>
+
+        <p style="text-align:center;color:var(--subtext);font-size:.75rem;margin-top:24px">VelkroGo v1.0 &nbsp;·&nbsp; MIT License &nbsp;·&nbsp; github.com/rufatronics/VelkroGo</p>
+      </div>
     </div>
   </main>
 </div>
@@ -450,13 +539,13 @@ function killAgent() {
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById(`${name}-view`).classList.add('active');
-  document.querySelectorAll('header nav button:not(.kill-btn)').forEach((b,i) => {
-    b.classList.toggle('active', ['chat','settings','jobs','audit'][i] === name);
-  });
   currentView = name;
   if (name === 'settings') loadProviders();
   if (name === 'jobs') loadJobs();
   if (name === 'audit') loadAudit();
+  document.querySelectorAll('header nav button:not(.kill-btn)').forEach((b,i) => {
+    b.classList.toggle('active', ['chat','settings','jobs','audit','about'][i] === name);
+  });
 }
 
 // ---- Providers ----

@@ -1,0 +1,17 @@
+# Binaries
+/velkrod
+/velkro
+*.exe
+bin/
+dist/
+
+# Local state / secrets
+*.db
+*.sqlite
+.env
+config.local.*
+
+# Go
+*.test
+*.out
+vendor/

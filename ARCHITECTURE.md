@@ -347,18 +347,15 @@ velkrogo/
 
 ---
 
-## 10. Key open decisions (to confirm with the user)
+## 10. Key decisions (confirmed with the user, 2026-06-12)
 
-These materially shape implementation; defaults are proposed so work isn't
-blocked, but they're worth confirming:
-
-1. **GUI delivery:** local web UI (recommended, lightest + portable) vs. a
-   native window wrapper (Wails/webview) vs. fully native.
-2. **Sandbox baseline:** require a container runtime, or ship a host-exec
-   fallback as default?
-3. **Default brain:** Claude (`claude-sonnet-4-6` as the everyday model,
-   `claude-opus-4-8`/`claude-fable-5` for hard tasks, `claude-haiku-4-5` for
-   saver mode) vs. a local Ollama model out of the box.
-4. **Computer-use backend** for World 2 GUI control on each OS.
-
-See the question summary at the end of the chat response.
+1. **GUI delivery:** local web UI served by the daemon (open in browser or a
+   thin window). Lightest and identical on Windows/Linux.
+2. **Default brain:** none — a **first-run wizard** lets the user pick a
+   provider (Anthropic, OpenAI, or any OpenAI-compatible/custom endpoint) and
+   configure model + key.
+3. **Sandbox baseline:** **host execution by default**, gated by per-action
+   approvals; container isolation is offered as an opt-in hardening when
+   Docker/Podman is available.
+4. **Computer-use backend** for World 2 GUI control per OS: still open;
+   decided in Phase 5.

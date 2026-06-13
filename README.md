@@ -15,9 +15,22 @@ appears before it proceeds when uncertain), run a **money-saving mode**, support
 **any AI provider** (including custom ones), and even **add skills / improve its
 own code** — only when you accept the risk.
 
-> **Status: design phase.** This repo currently contains the architecture, the
-> phased roadmap, and a Phase 0 Go skeleton (core interfaces + daemon/client
-> entry points). No agent behaviour is wired yet.
+> **Status: Phase 1.** The architecture and roadmap are in place, and the first
+> working slice is implemented: provider adapters (Anthropic + any
+> OpenAI-compatible endpoint, covering OpenAI/Ollama/custom vendors), the agent
+> loop with a visible plan, the policy gate with scoped session grants, the
+> Claude-style `ask_user` question box, T0/T1 file tools, a first-run provider
+> wizard (no opinionated default), saver/normal cost modes, and a Bubble Tea
+> TUI with approval and question modals. Builds for Linux and Windows.
+
+## Try it
+```
+go build ./cmd/velkro && ./velkro
+```
+First run asks you to pick a provider (Anthropic / OpenAI / Ollama / custom
+OpenAI-compatible) and stores config under your OS user-config dir. In the TUI:
+type a task; approve side-effecting tools with `y` (once) / `s` (session) /
+`n` (deny); answer question boxes with the option number.
 
 ## Read first
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — full design, components, security

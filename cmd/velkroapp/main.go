@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -51,6 +50,7 @@ type VelkroApp struct {
 	win     fyne.Window
 	engine  *orchestrator.Engine
 	store   *provider.Store
+	db      *memory.DB
 
 	mu       sync.Mutex
 	messages []chatMsg
@@ -133,6 +133,7 @@ func (va *VelkroApp) init() {
 	dbPath, _ := memory.DefaultPath()
 	db, dbErr := memory.Open(dbPath)
 	if dbErr == nil {
+		va.db = db
 		tools.MemoryStore = db
 		tools.SkillsStore = db
 	}
@@ -298,9 +299,8 @@ func (va *VelkroApp) buildUI(def *provider.Entry) {
 
 	// ── Input row ─────────────────────────────────────────────────────────
 	va.input = widget.NewMultiLineEntry()
-	va.input.SetPlaceHolder("Type a task and press Ctrl+Enter to send…")
+	va.input.SetPlaceHolder("Type a task and click Send…")
 	va.input.SetMinRowsVisible(2)
-	va.input.OnSubmitted = func(_ string) {} // handled by key binding
 
 	va.sendBtn = widget.NewButtonWithIcon("Send", theme.MailSendIcon(), va.send)
 	va.sendBtn.Importance = widget.HighImportance
@@ -319,18 +319,19 @@ func (va *VelkroApp) buildUI(def *provider.Entry) {
 
 	// ── Toolbar ───────────────────────────────────────────────────────────
 	settingsBtn := widget.NewButtonWithIcon("Settings", theme.SettingsIcon(), va.showSettings)
-	aboutBtn := widget.NewButtonWithIcon("About", theme.InfoIcon(), va.showAbout)
+	aboutBtn := widget.NewButtonWithIcon("Help / About", theme.HelpIcon(), va.showAbout)
 	toolbar := container.NewHBox(
 		widget.NewLabelWithStyle("⚡ VelkroGo", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		layout.NewSpacer(),
 		settingsBtn, aboutBtn,
 	)
 
-	// ── Keyboard shortcut: Ctrl+Enter sends ───────────────────────────────
-	va.win.Canvas().AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyReturn,
-		Modifier: fyne.KeyModifierControl,
-	}, func(_ fyne.Shortcut) { va.send() })
+	// ── Window close: clean up DB ─────────────────────────────────────────
+	va.win.SetOnClosed(func() {
+		if va.db != nil {
+			va.db.Close()
+		}
+	})
 
 	// ── Root layout ───────────────────────────────────────────────────────
 	chatPanel := container.NewBorder(nil, nil, nil, nil, va.msgList)
@@ -348,7 +349,7 @@ func (va *VelkroApp) buildUI(def *provider.Entry) {
 			fyne.NewMenuItem("Quit", func() { va.fyneApp.Quit() }),
 		),
 		fyne.NewMenu("Help",
-			fyne.NewMenuItem("About", va.showAbout),
+			fyne.NewMenuItem("Help / About", va.showAbout),
 		),
 	))
 }
@@ -792,7 +793,7 @@ FIRST TIME? START HERE
 VelkroGo is an AI agent that runs entirely on your machine. It can write code, manage git repos, search the web, control your desktop, connect to Supabase and Vercel, and automate tasks — all with your approval before anything consequential happens. Nothing is sent anywhere except to the AI provider you choose.
 
 Step 1: On first launch a setup dialog appears automatically. Pick your AI provider from the list and enter your API key.
-Step 2: Type a task in the chat box and press Ctrl+Enter or click Send.
+Step 2: Type a task in the chat box and click the Send button.
 Step 3: The agent outlines a plan in the right panel, then executes it step by step.
 Step 4: When it wants to do something risky it shows an approval popup — you decide.
 
@@ -804,7 +805,7 @@ Chat panel (left): Your full conversation with the agent. Every message, tool ca
 
 Plan panel (right): The agent's numbered step-by-step plan for the current task. Watch it tick off steps in real time.
 
-Chat box (bottom): Type your task here. Press Ctrl+Enter or click Send.
+Chat box (bottom): Type your task here. Click the Send button to submit.
 
 Stop button: Cancel the current task at any time. The agent stops after the current tool finishes.
 
@@ -818,7 +819,7 @@ Token counter: Tracks how many tokens (words) you've used this session.
 KEYBOARD SHORTCUTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Ctrl+Enter    Send your message
+Send button    Submit your message
 Escape        Cancel the current task
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

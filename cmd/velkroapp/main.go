@@ -17,18 +17,26 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/rufatronics/velkrogo/internal/integrations/supabase"
+	"github.com/rufatronics/velkrogo/internal/integrations/vercel"
+	"github.com/rufatronics/velkrogo/internal/memory"
 	"github.com/rufatronics/velkrogo/internal/orchestrator"
 	"github.com/rufatronics/velkrogo/internal/policy"
+	"github.com/rufatronics/velkrogo/internal/prompt"
 	"github.com/rufatronics/velkrogo/internal/provider"
 	"github.com/rufatronics/velkrogo/internal/reasoning"
 	"github.com/rufatronics/velkrogo/internal/registry"
+	"github.com/rufatronics/velkrogo/internal/soul"
 	"github.com/rufatronics/velkrogo/internal/tools"
 	"github.com/rufatronics/velkrogo/internal/worlds/coder"
+	"github.com/rufatronics/velkrogo/internal/worlds/operator"
 
 	_ "github.com/rufatronics/velkrogo/internal/provider/anthropic"
 	_ "github.com/rufatronics/velkrogo/internal/provider/gemini"
 	_ "github.com/rufatronics/velkrogo/internal/provider/openaicompat"
 )
+
+var version = "dev"
 
 // chatMsg is one line in the transcript.
 type chatMsg struct {
@@ -121,29 +129,67 @@ func (va *VelkroApp) init() {
 		return
 	}
 
+	// Open state DB for memory/skills.
+	dbPath, _ := memory.DefaultPath()
+	db, dbErr := memory.Open(dbPath)
+	if dbErr == nil {
+		tools.MemoryStore = db
+		tools.SkillsStore = db
+	}
+
 	reg := registry.NewMemory()
 	allTools := []registry.Tool{
 		tools.ReadFile{}, tools.ListDir{}, tools.WriteFile{},
+		tools.MakeDir{}, tools.DeletePath{}, tools.MovePath{}, tools.CopyFile{},
 		tools.WebSearch{}, tools.FetchPage{},
 		tools.RunShell{},
+		tools.MemoryGet{}, tools.MemorySet{}, tools.MemoryList{}, tools.MemoryDelete{},
+		tools.SkillsList{}, tools.SkillsSave{}, tools.SkillsInvoke{}, tools.SkillsDelete{},
 	}
 	for _, t := range coder.AllCoderTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range coder.AllGitHubAPITools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range supabase.AllSupabaseTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range vercel.AllVercelTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range operator.AllOperatorTools() {
 		allTools = append(allTools, t)
 	}
 	for _, t := range allTools {
 		_ = reg.Register(t)
 	}
 
+	// Build layered system prompt.
+	soulContent := soul.Load()
+	var facts []memory.MemoryFact
+	var skills []memory.Skill
+	if db != nil {
+		facts, _ = db.ListMemory()
+		skills, _ = db.ListSkills()
+	}
+	sysPrompt := prompt.Build(prompt.Config{
+		Soul:   soulContent,
+		Facts:  facts,
+		Skills: skills,
+	})
+
 	events := make(chan orchestrator.Event, 256)
 	va.engine = &orchestrator.Engine{
-		Provider: prov,
-		Model:    def.Model,
-		Registry: reg,
-		Policy:   policy.NewBasic(),
-		World:    registry.WorldShared,
-		Events:   events,
-		Approver: va,
-		Asker:    va,
+		Provider:     prov,
+		Model:        def.Model,
+		Registry:     reg,
+		Policy:       policy.NewBasic(),
+		World:        registry.WorldShared,
+		Events:       events,
+		Approver:     va,
+		Asker:        va,
+		SystemPrompt: sysPrompt,
 	}
 
 	va.buildUI(def)

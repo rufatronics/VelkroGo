@@ -71,6 +71,17 @@ func migrate(db *sql.DB) error {
 		last_run    TEXT,
 		enabled     INTEGER NOT NULL DEFAULT 1,
 		created_at  TEXT NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS memory_facts (
+		key        TEXT PRIMARY KEY,
+		value      TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS session_rules (
+		session_id TEXT NOT NULL,
+		rule       TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (session_id, rule)
 	);`)
 	return err
 }
@@ -215,6 +226,85 @@ func (d *DB) ListSkills() ([]Skill, error) {
 
 func (d *DB) DeleteSkill(id string) error {
 	_, err := d.db.Exec(`DELETE FROM skills WHERE id=?`, id)
+	return err
+}
+
+// --- Memory facts ---
+
+// MemoryFact is a persistent key-value fact the agent can recall across sessions.
+type MemoryFact struct {
+	Key       string
+	Value     string
+	UpdatedAt time.Time
+}
+
+func (d *DB) SetMemory(key, value string) error {
+	_, err := d.db.Exec(`INSERT INTO memory_facts(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		key, value, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+func (d *DB) GetMemory(key string) (string, error) {
+	var value string
+	err := d.db.QueryRow(`SELECT value FROM memory_facts WHERE key=?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	return value, err
+}
+
+func (d *DB) ListMemory() ([]MemoryFact, error) {
+	rows, err := d.db.Query(`SELECT key,value,updated_at FROM memory_facts ORDER BY key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MemoryFact
+	for rows.Next() {
+		var f MemoryFact
+		var ts string
+		if err := rows.Scan(&f.Key, &f.Value, &ts); err != nil {
+			return nil, err
+		}
+		f.UpdatedAt, _ = time.Parse(time.RFC3339, ts)
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) DeleteMemory(key string) error {
+	_, err := d.db.Exec(`DELETE FROM memory_facts WHERE key=?`, key)
+	return err
+}
+
+// --- Session rules ---
+
+func (d *DB) AddRule(sessionID, rule string) error {
+	_, err := d.db.Exec(`INSERT OR IGNORE INTO session_rules(session_id,rule,created_at) VALUES(?,?,?)`,
+		sessionID, rule, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+func (d *DB) ListRules(sessionID string) ([]string, error) {
+	rows, err := d.db.Query(`SELECT rule FROM session_rules WHERE session_id=? ORDER BY created_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) DeleteRule(sessionID, rule string) error {
+	_, err := d.db.Exec(`DELETE FROM session_rules WHERE session_id=? AND rule=?`, sessionID, rule)
 	return err
 }
 

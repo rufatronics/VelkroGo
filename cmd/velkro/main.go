@@ -11,12 +11,18 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rufatronics/velkrogo/internal/integrations/supabase"
+	"github.com/rufatronics/velkrogo/internal/integrations/vercel"
+	"github.com/rufatronics/velkrogo/internal/memory"
 	"github.com/rufatronics/velkrogo/internal/orchestrator"
 	"github.com/rufatronics/velkrogo/internal/policy"
+	"github.com/rufatronics/velkrogo/internal/prompt"
 	"github.com/rufatronics/velkrogo/internal/provider"
 	"github.com/rufatronics/velkrogo/internal/registry"
+	"github.com/rufatronics/velkrogo/internal/soul"
 	"github.com/rufatronics/velkrogo/internal/tools"
 	"github.com/rufatronics/velkrogo/internal/worlds/coder"
+	"github.com/rufatronics/velkrogo/internal/worlds/operator"
 
 	// Register provider factories.
 	_ "github.com/rufatronics/velkrogo/internal/provider/anthropic"
@@ -24,7 +30,71 @@ import (
 	_ "github.com/rufatronics/velkrogo/internal/provider/openaicompat"
 )
 
+var version = "dev"
+
+const helpText = `VelkroGo TUI — Terminal interface (works over SSH, PowerShell, any terminal)
+
+USAGE:
+  velkro [--help]
+
+QUICK START:
+  1. First run launches a setup wizard — pick your provider and enter your API key.
+  2. Type your task at the prompt and press Enter. The agent plans then acts.
+  3. Approval prompts appear inline: press y (allow once), s (allow for session), n (deny).
+  4. Press Tab to open Settings and manage providers.
+
+COMMANDS (type in the chat):
+  /saver     Toggle cost-saving mode (cheaper model, minimal prompts)
+  /help      Show this help text
+  /new       Start a new session
+  /sessions  List saved sessions
+
+KEYBOARD:
+  Enter      Send message
+  Tab        Open/close Settings panel
+  Ctrl+C     Exit
+
+APPROVAL TIERS:
+  T0  Read-only (web search, read file)   — runs automatically
+  T1  Local write (write file, git commit) — y/s/n prompt
+  T2  External (git push, HTTP POST)       — y/s/n with preview
+  T3  Device control (run shell)           — y/s/n prompt
+  T4  Self-modify                          — explicit risk accept required
+
+POWERSHELL / WINDOWS TERMINAL:
+  Run in PowerShell with: .\velkro-windows-amd64.exe
+  If colours look wrong, run: $env:COLORTERM=""
+  Or disable all colour: set VELKRO_NO_COLOR=1
+
+ENVIRONMENT VARIABLES:
+  ANTHROPIC_API_KEY    Anthropic key (recommended over pasting in wizard)
+  OPENAI_API_KEY       OpenAI key
+  GEMINI_API_KEY       Google Gemini key
+  GITHUB_TOKEN         GitHub API (for PR/issue tools)
+  SUPABASE_URL         Supabase project URL
+  SUPABASE_SERVICE_KEY Supabase service-role key
+  VERCEL_TOKEN         Vercel API token
+  VELKRO_NO_COLOR      Set to disable all colour output (plain ASCII)
+  VELKRO_ADDR          Daemon address for remote mode (default 127.0.0.1:7477)
+
+DATA:
+  Config     ~/.config/velkrogo/providers.json
+  Database   ~/.config/velkrogo/state.db
+  Identity   ~/.velkrogo/SOUL.md  (edit to customise agent personality)
+
+See https://github.com/rufatronics/VelkroGo for full documentation.
+`
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help") {
+		fmt.Print(helpText)
+		return
+	}
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Println("velkro", version)
+		return
+	}
+
 	store, err := provider.LoadStore()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "load provider store:", err)
@@ -51,28 +121,67 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Open state DB for memory/skills.
+	dbPath, _ := memory.DefaultPath()
+	db, dbErr := memory.Open(dbPath)
+	if dbErr == nil {
+		tools.MemoryStore = db
+		tools.SkillsStore = db
+		defer db.Close()
+	}
+
 	// Tool registry.
 	reg := registry.NewMemory()
 	allTools := []registry.Tool{
 		tools.ReadFile{}, tools.ListDir{}, tools.WriteFile{},
+		tools.MakeDir{}, tools.DeletePath{}, tools.MovePath{}, tools.CopyFile{},
 		tools.WebSearch{}, tools.FetchPage{},
 		tools.RunShell{},
+		tools.MemoryGet{}, tools.MemorySet{}, tools.MemoryList{}, tools.MemoryDelete{},
+		tools.SkillsList{}, tools.SkillsSave{}, tools.SkillsInvoke{}, tools.SkillsDelete{},
 	}
 	for _, t := range coder.AllCoderTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range coder.AllGitHubAPITools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range supabase.AllSupabaseTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range vercel.AllVercelTools() {
+		allTools = append(allTools, t)
+	}
+	for _, t := range operator.AllOperatorTools() {
 		allTools = append(allTools, t)
 	}
 	for _, t := range allTools {
 		_ = reg.Register(t)
 	}
 
+	// Build layered system prompt.
+	soulContent := soul.Load()
+	var facts []memory.MemoryFact
+	var skills []memory.Skill
+	if db != nil {
+		facts, _ = db.ListMemory()
+		skills, _ = db.ListSkills()
+	}
+	sysPrompt := prompt.Build(prompt.Config{
+		Soul:   soulContent,
+		Facts:  facts,
+		Skills: skills,
+	})
+
 	events := make(chan orchestrator.Event, 128)
 	engine := &orchestrator.Engine{
-		Provider: prov,
-		Model:    def.Model,
-		Registry: reg,
-		Policy:   policy.NewBasic(),
-		World:    registry.WorldShared,
-		Events:   events,
+		Provider:     prov,
+		Model:        def.Model,
+		Registry:     reg,
+		Policy:       policy.NewBasic(),
+		World:        registry.WorldShared,
+		Events:       events,
+		SystemPrompt: sysPrompt,
 	}
 
 	if err := runTUI(engine, events, store); err != nil {

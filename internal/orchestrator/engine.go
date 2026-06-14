@@ -32,15 +32,16 @@ type Approver interface {
 // Engine is the in-process agent loop. The daemon hosts this same engine
 // behind the local API so frontends connect to it remotely.
 type Engine struct {
-	Provider provider.Provider
-	Model    string
-	Registry registry.Registry
-	Policy   policy.Engine
-	Asker    reasoning.Asker
-	Approver Approver
-	Mode     CostMode
-	World    registry.World
-	Events   chan<- Event
+	Provider     provider.Provider
+	Model        string
+	Registry     registry.Registry
+	Policy       policy.Engine
+	Asker        reasoning.Asker
+	Approver     Approver
+	Mode         CostMode
+	World        registry.World
+	Events       chan<- Event
+	SystemPrompt string // overrides default when set (layered prompt from soul/memory/skills)
 
 	history []provider.Message
 	plan    Plan
@@ -63,6 +64,9 @@ func (e *Engine) emit(ev Event) {
 }
 
 func (e *Engine) systemPrompt() string {
+	if e.SystemPrompt != "" {
+		return e.SystemPrompt
+	}
 	if e.Mode == ModeSaver {
 		return systemPromptSaver
 	}

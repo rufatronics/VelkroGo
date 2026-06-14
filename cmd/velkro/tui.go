@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -93,6 +94,7 @@ type model struct {
 	inToks   int
 	outToks  int
 	width    int
+	cancel   context.CancelFunc
 	// Settings cursor
 	settingsCursor int
 }
@@ -111,11 +113,28 @@ var (
 )
 
 func runTUI(engine *orchestrator.Engine, events chan orchestrator.Event, store *provider.Store) error {
+	if os.Getenv("VELKRO_NO_COLOR") != "" || os.Getenv("NO_COLOR") != "" {
+		// Strip all styles when color is disabled
+		styleUser   = lipgloss.NewStyle()
+		styleAgent  = lipgloss.NewStyle()
+		styleTool   = lipgloss.NewStyle()
+		styleWarn   = lipgloss.NewStyle()
+		styleErr    = lipgloss.NewStyle()
+		stylePlan   = lipgloss.NewStyle()
+		styleHead   = lipgloss.NewStyle()
+		styleSel    = lipgloss.NewStyle()
+		styleDim    = lipgloss.NewStyle()
+		styleBorder = lipgloss.NewStyle()
+	}
+
 	m := &model{
 		engine: engine,
 		store:  store,
 		lines: []string{
 			styleHead.Render("VelkroGo") + "  " + modeLine(engine) + "  " + styleDim.Render("Tab=settings  Ctrl+C=quit"),
+			styleDim.Render("Type a task and press Enter. Type 'help' or '/help' to see all features."),
+			styleDim.Render("Commands: /saver  /new  /sessions  /help"),
+			"",
 		},
 	}
 	p := tea.NewProgram(m)
@@ -197,7 +216,20 @@ func (m *model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 
 func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Type == tea.KeyCtrlC {
+		if m.cancel != nil {
+			m.cancel()
+		}
 		return m, tea.Quit
+	}
+
+	if key.Type == tea.KeyEsc && m.state == stateBusy {
+		if m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+		}
+		m.lines = append(m.lines, styleDim.Render("Task cancelled."))
+		m.state = stateInput
+		return m, nil
 	}
 
 	// Tab switches views.
@@ -227,10 +259,29 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case stateQuestion:
 		q := m.question.qs[0]
-		if n, err := strconv.Atoi(key.String()); err == nil && n >= 1 && n <= len(q.Options) {
-			m.question.reply <- []reasoning.Answer{{Selected: []string{q.Options[n-1].Label}}}
-			m.lines = append(m.lines, styleWarn.Render("you chose: "+q.Options[n-1].Label))
-			m.question = nil; m.state = stateBusy
+		switch key.Type {
+		case tea.KeyRunes:
+			m.input += string(key.Runes)
+		case tea.KeySpace:
+			m.input += " "
+		case tea.KeyBackspace:
+			if len(m.input) > 0 {
+				m.input = m.input[:len(m.input)-1]
+			}
+		case tea.KeyEnter:
+			text := strings.TrimSpace(m.input)
+			m.input = ""
+			if n, err := strconv.Atoi(text); err == nil && n >= 1 && n <= len(q.Options) {
+				m.question.reply <- []reasoning.Answer{{Selected: []string{q.Options[n-1].Label}}}
+				m.lines = append(m.lines, styleWarn.Render("you: "+q.Options[n-1].Label))
+			} else if text != "" {
+				m.question.reply <- []reasoning.Answer{{OtherText: text}}
+				m.lines = append(m.lines, styleWarn.Render("you: "+text))
+			} else {
+				return m, nil // ignore empty
+			}
+			m.question = nil
+			m.state = stateBusy
 		}
 		return m, nil
 
@@ -250,24 +301,46 @@ func (m *model) handleChatKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if text == "" {
 			return m, nil
 		}
-		// 's' toggle shortcut.
-		if text == "/saver" {
+		m.input = ""
+
+		// Slash commands and plain "help" — handle locally, never send to AI.
+		switch strings.ToLower(text) {
+		case "/help", "help", "/?":
+			// Inject the full help text as lines into the transcript.
+			for _, line := range strings.Split(helpText, "\n") {
+				m.lines = append(m.lines, styleDim.Render(line))
+			}
+			return m, nil
+		case "/saver":
 			if m.engine.Mode == orchestrator.ModeNormal {
 				m.engine.Mode = orchestrator.ModeSaver
-				m.lines = append(m.lines, styleDim.Render("Switched to saver mode"))
+				m.lines = append(m.lines, styleDim.Render("Switched to saver mode — cheaper model, minimal prompts."))
 			} else {
 				m.engine.Mode = orchestrator.ModeNormal
-				m.lines = append(m.lines, styleDim.Render("Switched to normal mode"))
+				m.lines = append(m.lines, styleDim.Render("Switched to normal mode."))
 			}
-			m.input = ""
+			return m, nil
+		case "/new":
+			m.engine.Reset()
+			m.lines = append(m.lines, styleDim.Render("New session started. History cleared."))
+			m.plan = nil
+			m.inToks = 0
+			m.outToks = 0
+			return m, nil
+		case "/sessions":
+			m.lines = append(m.lines, styleDim.Render("Sessions are stored in ~/.config/velkrogo/state.db"))
+			m.lines = append(m.lines, styleDim.Render("Use /new to start a fresh session."))
 			return m, nil
 		}
-		m.input = ""
+
 		m.lines = append(m.lines, styleUser.Render("you: ")+text)
 		m.state = stateBusy
 		engine := m.engine
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancel = cancel
 		return m, func() tea.Msg {
-			return turnDone{err: engine.Run(context.Background(), text)}
+			defer cancel()
+			return turnDone{err: engine.Run(ctx, text)}
 		}
 	case tea.KeyBackspace:
 		if len(m.input) > 0 {
@@ -353,16 +426,17 @@ func (m *model) View() string {
 		for i, o := range q.Options {
 			b.WriteString(styleWarn.Render(fmt.Sprintf("  [%d] %s", i+1, o.Label)) + "\n")
 		}
+		b.WriteString(styleWarn.Render("  or type a custom answer: ") + m.input + "█\n")
 	case stateBusy:
-		b.WriteString(styleTool.Render(fmt.Sprintf("… working  (in=%d out=%d tok)  /saver to toggle cost mode",
+		b.WriteString(styleTool.Render(fmt.Sprintf("… working  (%d/%d tok)  Esc=cancel",
 			m.inToks, m.outToks)))
 	default:
 		mode := "normal"
 		if m.engine.Mode == orchestrator.ModeSaver {
-			mode = "💰saver"
+			mode = "saver"
 		}
-		b.WriteString(styleUser.Render("> ") + m.input + "█" +
-			styleDim.Render(fmt.Sprintf("  [%s] Tab=settings  /saver=toggle", mode)))
+		b.WriteString(styleUser.Render("> ") + m.input + "█" + "\n")
+		b.WriteString(styleDim.Render(fmt.Sprintf("[%s mode] Tab=settings  /help=help  /saver=toggle  /new=reset", mode)))
 	}
 	return b.String()
 }

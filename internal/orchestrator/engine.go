@@ -63,6 +63,13 @@ func (e *Engine) emit(ev Event) {
 	}
 }
 
+// Reset clears the conversation history and plan, starting a fresh session.
+func (e *Engine) Reset() {
+	e.history = nil
+	e.plan = Plan{}
+	e.emit(Event{Kind: "plan", Plan: &Plan{}})
+}
+
 func (e *Engine) systemPrompt() string {
 	if e.SystemPrompt != "" {
 		return e.SystemPrompt

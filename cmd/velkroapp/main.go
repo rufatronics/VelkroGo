@@ -776,19 +776,258 @@ func (va *VelkroApp) showSetupDialog(onComplete func()) {
 // ── About dialog ───────────────────────────────────────────────────────────
 
 func (va *VelkroApp) showAbout() {
-	content := container.NewVBox(
-		widget.NewLabelWithStyle("⚡ VelkroGo", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabelWithStyle("Version 1.0", fyne.TextAlignCenter, fyne.TextStyle{Italic: true}),
-		widget.NewSeparator(),
-		widget.NewLabel("Built by rufatronics"),
-		widget.NewLabel("github.com/rufatronics/VelkroGo"),
-		widget.NewSeparator(),
-		widget.NewLabel("Self-hosted AI agent for Windows & Linux.\nCoding agent + computer-use agent in one app.\nAll actions require your approval."),
-		widget.NewSeparator(),
-		widget.NewLabel("Supported providers: Anthropic, OpenAI, Gemini,\nDeepSeek, Groq, Mistral, xAI, Together, Perplexity,\nCohere, OpenRouter, Fireworks, Cerebras, Ollama, LM Studio, Custom"),
-	)
-	dialog.ShowCustom("About VelkroGo", "Close", content, va.win)
+	helpLabel := widget.NewLabel(guiHelpText)
+	helpLabel.Wrapping = fyne.TextWrapWord
+	scroll := container.NewVScroll(helpLabel)
+	scroll.SetMinSize(fyne.NewSize(640, 480))
+	dialog.ShowCustom("VelkroGo — Help & Feature Guide", "Close", scroll, va.win)
 }
+
+const guiHelpText = `VelkroGo Desktop App — Self-hosted AI agent for Windows & Linux
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FIRST TIME? START HERE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VelkroGo is an AI agent that runs entirely on your machine. It can write code, manage git repos, search the web, control your desktop, connect to Supabase and Vercel, and automate tasks — all with your approval before anything consequential happens. Nothing is sent anywhere except to the AI provider you choose.
+
+Step 1: On first launch a setup dialog appears automatically. Pick your AI provider from the list and enter your API key.
+Step 2: Type a task in the chat box and press Ctrl+Enter or click Send.
+Step 3: The agent outlines a plan in the right panel, then executes it step by step.
+Step 4: When it wants to do something risky it shows an approval popup — you decide.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE INTERFACE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Chat panel (left): Your full conversation with the agent. Every message, tool call, and result appears here.
+
+Plan panel (right): The agent's numbered step-by-step plan for the current task. Watch it tick off steps in real time.
+
+Chat box (bottom): Type your task here. Press Ctrl+Enter or click Send.
+
+Stop button: Cancel the current task at any time. The agent stops after the current tool finishes.
+
+Saver mode button (💰): Switches to a cheaper model with minimal prompts. Good for simple tasks to save API credits.
+
+Provider/model display: Shows which AI provider and model is active. Click Settings to change it.
+
+Token counter: Tracks how many tokens (words) you've used this session.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEYBOARD SHORTCUTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ctrl+Enter    Send your message
+Escape        Cancel the current task
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+APPROVAL GATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before anything risky happens a popup appears:
+
+  ⚠ Approval Required
+  Tool: run_shell   Risk: T3
+  sh -c "npm run build"
+  [Allow once]  [Allow for session]  [Deny]
+
+Allow once       — run this action, ask again next time
+Allow for session — never ask for this tool again until you restart
+Deny             — block the action; the agent notes it and adjusts
+
+Risk tiers:
+  T0  Read-only (read file, web search, git log)   — silent, auto-runs
+  T1  Local write (write file, git commit)          — popup
+  T2  External (git push, HTTP POST, PR)            — popup + preview
+  T3  Device control (run shell, mouse, keyboard)   — popup
+  T4  Self-modify (edit VelkroGo's own code)        — explicit accept
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUESTION BOX
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When the agent is unsure it pauses and asks before guessing:
+
+  Question: Which branch should I push to?
+  ○ main
+  ○ dev
+  ○ Create a new branch
+  [Or type a custom answer…]  [Submit]
+
+This prevents wrong actions on ambiguous requests.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FULL FEATURE LIST — WHAT THE AGENT CAN DO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILE SYSTEM
+  Read files, write files, list directories
+  Create directories (make_dir)
+  Delete files and folders (delete_path)
+  Move and rename (move_path)
+  Copy files (copy_file)
+
+WEB
+  Search the web — uses DuckDuckGo, no API key needed
+  Download and read any web page (fetch_page)
+
+SHELL
+  Run any command in bash or PowerShell (run_shell)
+  Always requires T3 approval. 30-second default timeout.
+
+GIT — coding agent features
+  git_status — see what changed in a repo
+  git_diff — see the exact line-by-line changes
+  git_log — view commit history
+  git_clone — clone any GitHub or GitLab repo
+  git_commit — stage everything and commit
+  git_create_branch — create and switch to a new branch
+  git_push — push to a remote (T2, always asks + shows preview)
+
+GITHUB API  (requires GITHUB_TOKEN environment variable)
+  github_list_prs — list open pull requests in a repo
+  github_create_pr — open a new pull request
+  github_create_issue — create a new issue with labels
+  github_merge_pr — merge a pull request (squash/merge/rebase)
+
+BUILD & TEST
+  run_build — run the project's build command
+  run_tests — run the test suite and report results
+
+SUPABASE  (requires SUPABASE_URL + SUPABASE_SERVICE_KEY)
+  supabase_select — query rows from any table with filters
+  supabase_insert — insert a new row
+  supabase_update — update existing rows by filter
+  supabase_delete — delete rows by filter
+  supabase_storage_upload — upload a local file to a storage bucket
+
+VERCEL  (requires VERCEL_TOKEN)
+  vercel_list_deployments — list recent deployments and their status
+  vercel_deploy — trigger a new deployment
+  vercel_set_env — set environment variables on a project
+
+DEVICE CONTROL  (World 2 — Operator mode)
+  screenshot — take a screenshot (returns image to agent)
+  mouse_click — click at any (x, y) screen position
+  mouse_move — move the cursor without clicking
+  keyboard_type — type text character by character
+  key_press — press key combos like ctrl+c, Return, alt+F4
+  open_app — launch any application by name or path
+  Linux: requires xdotool installed (sudo apt install xdotool)
+  Linux: for screenshots: sudo apt install scrot
+
+MEMORY  (persists across sessions and restarts)
+  memory_set — store a fact: "Remember that my project is at ~/code"
+  memory_get — recall a specific fact by its key
+  memory_list — see everything the agent remembers
+  memory_delete — forget a specific fact
+  Facts are saved in ~/.config/velkrogo/state.db and recalled
+  at the start of every conversation automatically.
+
+SKILLS  (reusable named prompts)
+  skills_save — save a reusable procedure by name
+  skills_list — list all saved skills
+  invoke_skill — run a skill by name
+  skills_delete — delete a skill
+  Example: "Save a skill called 'deploy' that runs vercel_deploy
+  and then sends me a Slack message with the deployment URL."
+  Then: "Run the deploy skill."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SOUL.md — CUSTOMISE THE AGENT'S PERSONALITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Edit the file ~/.velkrogo/SOUL.md to change how the agent behaves. It is loaded at startup and becomes the first layer of every system prompt. The file is created automatically with sensible defaults.
+
+Example instructions you can add:
+  "Always respond in Spanish."
+  "Prefer TypeScript over JavaScript in all new files."
+  "Never delete files without asking, even for T1 operations."
+  "This agent manages the production server at api.myapp.com."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYERED PROMPT ARCHITECTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every request builds the AI's system prompt from these layers:
+
+  Layer 0  Your SOUL.md identity file
+  Layer 1  Session rules (restrictions for this session)
+  Layer 2  Remembered facts (from memory_set)
+  Layer 3  Available skills (from skills_save)
+  Layer 4  Tool list (what tools are active)
+  Layer 5  Mode hint (normal vs cost-saver)
+
+This means the agent always knows your preferences and past facts without you repeating them.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SETTINGS — MANAGING PROVIDERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Click Settings in the toolbar to:
+  • See all configured providers
+  • Add a new provider (16 presets + Custom)
+  • Test connection — verify your key before saving
+  • Set as Default — switch the active provider
+  • Remove — delete a provider
+
+You can have multiple providers and switch between them. Example: use Ollama (free, local) for quick tasks and Anthropic Claude for complex ones.
+
+Supported providers:
+  Anthropic Claude, OpenAI GPT, Google Gemini, DeepSeek, Groq,
+  Mistral AI, xAI (Grok), Together AI, Perplexity AI, Cohere,
+  OpenRouter, Fireworks AI, Cerebras, Ollama, LM Studio, Custom
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENVIRONMENT VARIABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Set these before launching the app to avoid storing keys in files:
+
+  ANTHROPIC_API_KEY    sk-ant-...
+  OPENAI_API_KEY       sk-...
+  GEMINI_API_KEY       AI...
+  GITHUB_TOKEN         ghp_...
+  SUPABASE_URL         https://yourproject.supabase.co
+  SUPABASE_SERVICE_KEY eyJ...
+  VERCEL_TOKEN         ...
+
+Linux/Mac:  export ANTHROPIC_API_KEY=sk-ant-...
+Windows PS: $env:ANTHROPIC_API_KEY="sk-ant-..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHERE YOUR DATA IS STORED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All data stays on your machine. Nothing is uploaded to any cloud service except the prompts you send to your chosen AI provider.
+
+  Provider keys    ~/.config/velkrogo/providers.json  (600 permissions)
+  Sessions/memory  ~/.config/velkrogo/state.db
+  Audit log        ~/.config/velkrogo/audit.db
+  Agent identity   ~/.velkrogo/SOUL.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"No provider configured"
+  → Click Settings → Add Provider and enter your API key.
+
+"Connection failed"
+  → Check your API key is correct and has credits remaining.
+  → For Ollama: run 'ollama serve' first.
+
+App won't start on Linux
+  → sudo apt-get install libgl1-mesa-dev xorg-dev
+
+Device tools not working
+  → sudo apt install xdotool scrot  (Linux)
+
+"Tool denied by policy"
+  → Try the task again and click Allow in the popup.
+
+Full docs: https://github.com/rufatronics/VelkroGo`
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

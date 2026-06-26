@@ -47,10 +47,11 @@ VelkroGo is a self-hostable, cross-platform AI agent written in Go. It fuses a c
 - Stable ReAct loop with visible planning.
 - Functional safety core and tiered approvals.
 - TUI and Daemon are primary verified interfaces.
-- GUI (Fyne) is implemented but requires native headers for building.
+- GUI (Fyne) is implemented and verified for feature parity.
 
 ## 📝 Recent Fixes (June 2026)
 - Fixed daemon task cancellation bug by switching to `context.Background()` for async runs.
 - Robustified TUI setup wizard input handling.
 - Removed opinionated default models from all setup wizards.
 - Added lazy provider loading to the API server.
+- Improved GUI scrollability in approval and question dialogs.

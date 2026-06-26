@@ -427,7 +427,9 @@ func (va *VelkroApp) Approve(ctx context.Context, tool registry.Tool, preview st
 			fyne.TextAlignLeading, fyne.TextStyle{Italic: true},
 		)
 
-		content := container.NewVBox(tierInfo, widget.NewSeparator(), previewLabel)
+		scroll := container.NewVScroll(previewLabel)
+		scroll.SetMinSize(fyne.NewSize(500, 200))
+		content := container.NewVBox(tierInfo, widget.NewSeparator(), scroll)
 
 		d := dialog.NewCustom("Approval Required", "Deny", content, va.win)
 		d.SetOnClosed(func() {
@@ -494,10 +496,12 @@ func (va *VelkroApp) Ask(ctx context.Context, qs []reasoning.Question) ([]reason
 		other := widget.NewEntry()
 		other.SetPlaceHolder("Or type a custom answer…")
 
+		scroll := container.NewVScroll(radios)
+		scroll.SetMinSize(fyne.NewSize(400, 150))
 		content := container.NewVBox(
 			widget.NewLabel(q.Prompt),
 			widget.NewSeparator(),
-			radios,
+			scroll,
 			widget.NewLabel(""),
 			other,
 		)

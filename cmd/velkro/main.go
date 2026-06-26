@@ -92,6 +92,7 @@ func firstRunWizard(store *provider.Store) error {
 			fmt.Printf("%s: ", prompt)
 		}
 		line, _ := in.ReadString('\n')
+		line = strings.Trim(line, "\r\n")
 		line = strings.TrimSpace(line)
 		if line == "" {
 			return def
@@ -106,17 +107,17 @@ func firstRunWizard(store *provider.Store) error {
 	fmt.Println("Welcome to VelkroGo! Let's set up your AI provider.")
 	fmt.Println()
 	fmt.Println("Choose a provider:")
-	fmt.Println("  1)  Anthropic (Claude) — claude-sonnet-4-6")
-	fmt.Println("  2)  OpenAI (GPT)       — gpt-4o")
-	fmt.Println("  3)  Google Gemini      — gemini-2.0-flash")
-	fmt.Println("  4)  DeepSeek           — deepseek-chat")
-	fmt.Println("  5)  Groq (ultra-fast)  — llama-3.3-70b-versatile")
-	fmt.Println("  6)  Mistral AI         — mistral-large-latest")
-	fmt.Println("  7)  xAI (Grok)         — grok-3")
-	fmt.Println("  8)  Together AI        — llama-3-70b")
-	fmt.Println("  9)  Perplexity AI      — sonar-large")
-	fmt.Println(" 10)  Cohere             — command-r-plus")
-	fmt.Println(" 11)  OpenRouter         — (routes to any model)")
+	fmt.Println("  1)  Anthropic (Claude)")
+	fmt.Println("  2)  OpenAI (GPT)")
+	fmt.Println("  3)  Google Gemini")
+	fmt.Println("  4)  DeepSeek")
+	fmt.Println("  5)  Groq (ultra-fast)")
+	fmt.Println("  6)  Mistral AI")
+	fmt.Println("  7)  xAI (Grok)")
+	fmt.Println("  8)  Together AI")
+	fmt.Println("  9)  Perplexity AI")
+	fmt.Println(" 10)  Cohere")
+	fmt.Println(" 11)  OpenRouter")
 	fmt.Println(" 12)  Ollama (local, free, no key needed)")
 	fmt.Println(" 13)  LM Studio (local, free, no key needed)")
 	fmt.Println(" 14)  Cerebras (fast)")
@@ -129,21 +130,21 @@ func firstRunWizard(store *provider.Store) error {
 		needsKey                                       bool
 	}
 	defs := []provDef{
-		{"anthropic", "Anthropic", "anthropic", "", "claude-sonnet-4-6", "ANTHROPIC_API_KEY", true},
-		{"openai", "OpenAI", "openai-compatible", "https://api.openai.com/v1", "gpt-4o", "OPENAI_API_KEY", true},
-		{"gemini", "Google Gemini", "gemini", "", "gemini-2.0-flash", "GEMINI_API_KEY", true},
-		{"deepseek", "DeepSeek", "openai-compatible", "https://api.deepseek.com/v1", "deepseek-chat", "DEEPSEEK_API_KEY", true},
-		{"groq", "Groq", "openai-compatible", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", true},
-		{"mistral", "Mistral AI", "openai-compatible", "https://api.mistral.ai/v1", "mistral-large-latest", "MISTRAL_API_KEY", true},
-		{"xai", "xAI (Grok)", "openai-compatible", "https://api.x.ai/v1", "grok-3", "XAI_API_KEY", true},
-		{"together", "Together AI", "openai-compatible", "https://api.together.xyz/v1", "meta-llama/Llama-3-70b-chat-hf", "TOGETHER_API_KEY", true},
-		{"perplexity", "Perplexity AI", "openai-compatible", "https://api.perplexity.ai", "llama-3.1-sonar-large-128k-online", "PERPLEXITY_API_KEY", true},
-		{"cohere", "Cohere", "openai-compatible", "https://api.cohere.com/compatibility/v1", "command-r-plus", "COHERE_API_KEY", true},
-		{"openrouter", "OpenRouter", "openai-compatible", "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-6", "OPENROUTER_API_KEY", true},
-		{"ollama", "Ollama (local)", "openai-compatible", "http://localhost:11434/v1", "llama3.2", "", false},
-		{"lmstudio", "LM Studio (local)", "openai-compatible", "http://localhost:1234/v1", "local-model", "", false},
-		{"cerebras", "Cerebras", "openai-compatible", "https://api.cerebras.ai/v1", "llama3.1-70b", "CEREBRAS_API_KEY", true},
-		{"fireworks", "Fireworks AI", "openai-compatible", "https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p1-70b-instruct", "FIREWORKS_API_KEY", true},
+		{"anthropic", "Anthropic", "anthropic", "", "", "ANTHROPIC_API_KEY", true},
+		{"openai", "OpenAI", "openai-compatible", "https://api.openai.com/v1", "", "OPENAI_API_KEY", true},
+		{"gemini", "Google Gemini", "gemini", "", "", "GEMINI_API_KEY", true},
+		{"deepseek", "DeepSeek", "openai-compatible", "https://api.deepseek.com/v1", "", "DEEPSEEK_API_KEY", true},
+		{"groq", "Groq", "openai-compatible", "https://api.groq.com/openai/v1", "", "GROQ_API_KEY", true},
+		{"mistral", "Mistral AI", "openai-compatible", "https://api.mistral.ai/v1", "", "MISTRAL_API_KEY", true},
+		{"xai", "xAI (Grok)", "openai-compatible", "https://api.x.ai/v1", "", "XAI_API_KEY", true},
+		{"together", "Together AI", "openai-compatible", "https://api.together.xyz/v1", "", "TOGETHER_API_KEY", true},
+		{"perplexity", "Perplexity AI", "openai-compatible", "https://api.perplexity.ai", "", "PERPLEXITY_API_KEY", true},
+		{"cohere", "Cohere", "openai-compatible", "https://api.cohere.com/compatibility/v1", "", "COHERE_API_KEY", true},
+		{"openrouter", "OpenRouter", "openai-compatible", "https://openrouter.ai/api/v1", "", "OPENROUTER_API_KEY", true},
+		{"ollama", "Ollama (local)", "openai-compatible", "http://localhost:11434/v1", "", "", false},
+		{"lmstudio", "LM Studio (local)", "openai-compatible", "http://localhost:1234/v1", "", "", false},
+		{"cerebras", "Cerebras", "openai-compatible", "https://api.cerebras.ai/v1", "", "CEREBRAS_API_KEY", true},
+		{"fireworks", "Fireworks AI", "openai-compatible", "https://api.fireworks.ai/inference/v1", "", "FIREWORKS_API_KEY", true},
 		{"custom", "Custom", "openai-compatible", "", "", "", false},
 	}
 

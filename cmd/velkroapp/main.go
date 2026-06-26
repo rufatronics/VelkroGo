@@ -427,7 +427,9 @@ func (va *VelkroApp) Approve(ctx context.Context, tool registry.Tool, preview st
 			fyne.TextAlignLeading, fyne.TextStyle{Italic: true},
 		)
 
-		content := container.NewVBox(tierInfo, widget.NewSeparator(), previewLabel)
+		scroll := container.NewVScroll(previewLabel)
+		scroll.SetMinSize(fyne.NewSize(500, 200))
+		content := container.NewVBox(tierInfo, widget.NewSeparator(), scroll)
 
 		d := dialog.NewCustom("Approval Required", "Deny", content, va.win)
 		d.SetOnClosed(func() {
@@ -494,10 +496,12 @@ func (va *VelkroApp) Ask(ctx context.Context, qs []reasoning.Question) ([]reason
 		other := widget.NewEntry()
 		other.SetPlaceHolder("Or type a custom answer…")
 
+		scroll := container.NewVScroll(radios)
+		scroll.SetMinSize(fyne.NewSize(400, 150))
 		content := container.NewVBox(
 			widget.NewLabel(q.Prompt),
 			widget.NewSeparator(),
-			radios,
+			scroll,
 			widget.NewLabel(""),
 			other,
 		)
@@ -606,21 +610,21 @@ func (va *VelkroApp) showAddProviderDialog(onSave func()) {
 	}
 
 	presetKinds := map[string]provider.Entry{
-		"Anthropic (Claude)": {Kind: "anthropic", Name: "Anthropic", Model: "claude-sonnet-4-6", KeyEnv: "ANTHROPIC_API_KEY"},
-		"OpenAI (GPT)":       {Kind: "openai-compatible", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o", KeyEnv: "OPENAI_API_KEY"},
-		"Google Gemini":      {Kind: "gemini", Name: "Google Gemini", Model: "gemini-2.0-flash", KeyEnv: "GEMINI_API_KEY"},
-		"DeepSeek":           {Kind: "openai-compatible", Name: "DeepSeek", BaseURL: "https://api.deepseek.com/v1", Model: "deepseek-chat", KeyEnv: "DEEPSEEK_API_KEY"},
-		"Groq":               {Kind: "openai-compatible", Name: "Groq", BaseURL: "https://api.groq.com/openai/v1", Model: "llama-3.3-70b-versatile", KeyEnv: "GROQ_API_KEY"},
-		"Mistral AI":         {Kind: "openai-compatible", Name: "Mistral", BaseURL: "https://api.mistral.ai/v1", Model: "mistral-large-latest", KeyEnv: "MISTRAL_API_KEY"},
-		"xAI (Grok)":         {Kind: "openai-compatible", Name: "xAI", BaseURL: "https://api.x.ai/v1", Model: "grok-3", KeyEnv: "XAI_API_KEY"},
-		"Together AI":        {Kind: "openai-compatible", Name: "Together", BaseURL: "https://api.together.xyz/v1", Model: "meta-llama/Llama-3-70b-chat-hf", KeyEnv: "TOGETHER_API_KEY"},
-		"Perplexity AI":      {Kind: "openai-compatible", Name: "Perplexity", BaseURL: "https://api.perplexity.ai", Model: "llama-3.1-sonar-large-128k-online", KeyEnv: "PERPLEXITY_API_KEY"},
-		"Cohere":             {Kind: "openai-compatible", Name: "Cohere", BaseURL: "https://api.cohere.com/compatibility/v1", Model: "command-r-plus", KeyEnv: "COHERE_API_KEY"},
-		"OpenRouter":         {Kind: "openai-compatible", Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", Model: "anthropic/claude-sonnet-4-6", KeyEnv: "OPENROUTER_API_KEY"},
-		"Fireworks AI":       {Kind: "openai-compatible", Name: "Fireworks", BaseURL: "https://api.fireworks.ai/inference/v1", Model: "accounts/fireworks/models/llama-v3p1-70b-instruct", KeyEnv: "FIREWORKS_API_KEY"},
-		"Cerebras":           {Kind: "openai-compatible", Name: "Cerebras", BaseURL: "https://api.cerebras.ai/v1", Model: "llama3.1-70b", KeyEnv: "CEREBRAS_API_KEY"},
-		"Ollama (local)":     {Kind: "openai-compatible", Name: "Ollama", BaseURL: "http://localhost:11434/v1", Model: "llama3.2"},
-		"LM Studio (local)":  {Kind: "openai-compatible", Name: "LM Studio", BaseURL: "http://localhost:1234/v1", Model: "local-model"},
+		"Anthropic (Claude)": {Kind: "anthropic", Name: "Anthropic", KeyEnv: "ANTHROPIC_API_KEY"},
+		"OpenAI (GPT)":       {Kind: "openai-compatible", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", KeyEnv: "OPENAI_API_KEY"},
+		"Google Gemini":      {Kind: "gemini", Name: "Google Gemini", KeyEnv: "GEMINI_API_KEY"},
+		"DeepSeek":           {Kind: "openai-compatible", Name: "DeepSeek", BaseURL: "https://api.deepseek.com/v1", KeyEnv: "DEEPSEEK_API_KEY"},
+		"Groq":               {Kind: "openai-compatible", Name: "Groq", BaseURL: "https://api.groq.com/openai/v1", KeyEnv: "GROQ_API_KEY"},
+		"Mistral AI":         {Kind: "openai-compatible", Name: "Mistral", BaseURL: "https://api.mistral.ai/v1", KeyEnv: "MISTRAL_API_KEY"},
+		"xAI (Grok)":         {Kind: "openai-compatible", Name: "xAI", BaseURL: "https://api.x.ai/v1", KeyEnv: "XAI_API_KEY"},
+		"Together AI":        {Kind: "openai-compatible", Name: "Together", BaseURL: "https://api.together.xyz/v1", KeyEnv: "TOGETHER_API_KEY"},
+		"Perplexity AI":      {Kind: "openai-compatible", Name: "Perplexity", BaseURL: "https://api.perplexity.ai", KeyEnv: "PERPLEXITY_API_KEY"},
+		"Cohere":             {Kind: "openai-compatible", Name: "Cohere", BaseURL: "https://api.cohere.com/compatibility/v1", KeyEnv: "COHERE_API_KEY"},
+		"OpenRouter":         {Kind: "openai-compatible", Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", KeyEnv: "OPENROUTER_API_KEY"},
+		"Fireworks AI":       {Kind: "openai-compatible", Name: "Fireworks", BaseURL: "https://api.fireworks.ai/inference/v1", KeyEnv: "FIREWORKS_API_KEY"},
+		"Cerebras":           {Kind: "openai-compatible", Name: "Cerebras", BaseURL: "https://api.cerebras.ai/v1", KeyEnv: "CEREBRAS_API_KEY"},
+		"Ollama (local)":     {Kind: "openai-compatible", Name: "Ollama", BaseURL: "http://localhost:11434/v1"},
+		"LM Studio (local)":  {Kind: "openai-compatible", Name: "LM Studio", BaseURL: "http://localhost:1234/v1"},
 		"Custom":             {Kind: "openai-compatible", Name: "Custom"},
 	}
 

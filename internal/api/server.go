@@ -139,8 +139,27 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Update engine's provider if it's missing (e.g. was configured after daemon start)
+	if s.engine.Provider == nil {
+		if def := s.store.Default(); def != nil {
+			prov, err := provider.Build(*def)
+			if err == nil {
+				s.engine.Provider = prov
+				s.engine.Model = def.Model
+			}
+		}
+	}
+
+	if s.engine.Provider == nil {
+		http.Error(w, "no provider configured", http.StatusPreconditionFailed)
+		return
+	}
+
+	// Use context.Background() instead of r.Context() so the task continues
+	// after the HTTP request is finished.
 	go func() {
-		if err := s.engine.Run(r.Context(), req.Input); err != nil {
+		if err := s.engine.Run(context.Background(), req.Input); err != nil {
 			s.broadcast(map[string]any{"type": "error", "message": err.Error()})
 		}
 	}()

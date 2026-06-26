@@ -92,6 +92,7 @@ func firstRunWizard(store *provider.Store) error {
 			fmt.Printf("%s: ", prompt)
 		}
 		line, _ := in.ReadString('\n')
+		line = strings.Trim(line, "\r\n")
 		line = strings.TrimSpace(line)
 		if line == "" {
 			return def
@@ -108,7 +109,7 @@ func firstRunWizard(store *provider.Store) error {
 	fmt.Println("Choose a provider:")
 	fmt.Println("  1)  Anthropic (Claude) — claude-sonnet-4-6")
 	fmt.Println("  2)  OpenAI (GPT)       — gpt-4o")
-	fmt.Println("  3)  Google Gemini      — gemini-2.0-flash")
+	fmt.Println("  3)  Google Gemini      — gemini-1.5-flash")
 	fmt.Println("  4)  DeepSeek           — deepseek-chat")
 	fmt.Println("  5)  Groq (ultra-fast)  — llama-3.3-70b-versatile")
 	fmt.Println("  6)  Mistral AI         — mistral-large-latest")
@@ -131,7 +132,7 @@ func firstRunWizard(store *provider.Store) error {
 	defs := []provDef{
 		{"anthropic", "Anthropic", "anthropic", "", "claude-sonnet-4-6", "ANTHROPIC_API_KEY", true},
 		{"openai", "OpenAI", "openai-compatible", "https://api.openai.com/v1", "gpt-4o", "OPENAI_API_KEY", true},
-		{"gemini", "Google Gemini", "gemini", "", "gemini-2.0-flash", "GEMINI_API_KEY", true},
+		{"gemini", "Google Gemini", "gemini", "", "gemini-1.5-flash", "GEMINI_API_KEY", true},
 		{"deepseek", "DeepSeek", "openai-compatible", "https://api.deepseek.com/v1", "deepseek-chat", "DEEPSEEK_API_KEY", true},
 		{"groq", "Groq", "openai-compatible", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY", true},
 		{"mistral", "Mistral AI", "openai-compatible", "https://api.mistral.ai/v1", "mistral-large-latest", "MISTRAL_API_KEY", true},
